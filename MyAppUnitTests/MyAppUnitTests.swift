@@ -111,6 +111,68 @@ struct InventoryModelTests {
         #expect(product.imageSource == .asset("sample"))
     }
 
+    @Test func addDraftRequiresBrandAndName() {
+        var draft = AddProductDraft()
+        draft.name = "Mask"
+        #expect(!draft.isValid(hasPhoto: true))
+
+        draft.brand = "Laneige"
+        draft.name = "   "
+        #expect(!draft.isValid(hasPhoto: true))
+    }
+
+    @Test func addDraftRequiresPhoto() {
+        var draft = AddProductDraft()
+        draft.brand = "Laneige"
+        draft.name = "Mask"
+
+        #expect(!draft.isValid(hasPhoto: false))
+    }
+
+    @Test func addDraftRequiresOpenedDateWhenInUse() {
+        var draft = AddProductDraft()
+        draft.brand = "Laneige"
+        draft.name = "Mask"
+        draft.isInUse = true
+
+        #expect(!draft.isValid(hasPhoto: true))
+
+        draft.openedDate = date(2026, 9, 1)
+        #expect(draft.isValid(hasPhoto: true))
+    }
+
+    @Test func addDraftAcceptsCompleteUnusedProduct() {
+        var draft = AddProductDraft()
+        draft.brand = "Laneige"
+        draft.name = "Mask"
+
+        #expect(draft.isValid(hasPhoto: true))
+    }
+
+    @Test func addDraftTrimsIdentityWhenMakingProduct() {
+        let openedDate = date(2026, 9, 1)
+        let expirationDate = date(2027, 9, 1)
+        var draft = AddProductDraft()
+        draft.brand = "  Laneige \n"
+        draft.name = "\tMask  "
+        draft.isInUse = true
+        draft.openedDate = openedDate
+        draft.periodAfterOpeningMonths = 18
+        draft.printedExpirationDate = expirationDate
+        let photoData = Data([0x01, 0x02])
+
+        let product = draft.makeProduct(photoData: photoData)
+
+        #expect(product.brand == "Laneige")
+        #expect(product.name == "Mask")
+        #expect(product.assetName == nil)
+        #expect(product.photoData == photoData)
+        #expect(product.openedDate == openedDate)
+        #expect(product.periodAfterOpeningMonths == 18)
+        #expect(product.printedExpirationDate == expirationDate)
+        #expect(product.isInUse)
+    }
+
     @Test func welcomePhysicsMatchesInventoryCountAndPreservesRetainedBodies() {
         let products = Product.samples(referenceDate: date(2026, 9, 16))
         var state = WelcomePhysicsState()

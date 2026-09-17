@@ -3,7 +3,7 @@ import SwiftUI
 struct InventoryView: View {
     @Bindable var store: InventoryStore
     @State private var scrollOffset: CGFloat = 0
-    @State private var showAddInfo = false
+    @State private var showAddProduct = false
 
     private let columns = [
         GridItem(.flexible(), spacing: 10),
@@ -53,15 +53,13 @@ struct InventoryView: View {
         }
         .safeAreaInset(edge: .bottom) {
             InventoryBottomBar(searchText: $store.searchText) {
-                showAddInfo = true
+                showAddProduct = true
             }
             .padding(.horizontal, 24)
             .padding(.bottom, 4)
         }
-        .alert("Add Product", isPresented: $showAddInfo) {
-            Button("OK", role: .cancel) { }
-        } message: {
-            Text("Product creation is not included in this four-screen prototype.")
+        .sheet(isPresented: $showAddProduct) {
+            AddProductView()
         }
         .toolbarVisibility(.hidden, for: .navigationBar)
     }
