@@ -1,5 +1,6 @@
 import CoreGraphics
 import Foundation
+import SwiftData
 import Testing
 @testable import CH6_Inventory
 
@@ -73,6 +74,43 @@ struct InventoryModelTests {
         #expect(store.filteredProducts.map(\.id) == [matching.id])
     }
 
+    @Test func visibleProductsSortByEffectiveExpirationThenName() {
+        let reference = date(2026, 1, 1)
+        let late = Product.fixture(brand: "Zeta", name: "Late", expiration: date(2026, 6, 1))
+        let earlyB = Product.fixture(brand: "Beta", name: "Early", expiration: date(2026, 2, 1))
+        let earlyA = Product.fixture(brand: "Alpha", name: "Early", expiration: date(2026, 2, 1))
+
+        let result = Product.visibleProducts(
+            [late, earlyB, earlyA],
+            filter: .all,
+            searchText: "",
+            referenceDate: reference
+        )
+
+        #expect(result.map(\.id) == [earlyA.id, earlyB.id, late.id])
+    }
+
+    @Test func sampleSeedingIsIdempotent() throws {
+        let container = try makeContainer()
+        try Product.seedSamplesIfNeeded(in: container.mainContext, referenceDate: date(2026, 9, 17))
+        try Product.seedSamplesIfNeeded(in: container.mainContext, referenceDate: date(2026, 9, 17))
+
+        #expect(try container.mainContext.fetchCount(FetchDescriptor<Product>()) == 8)
+    }
+
+    @Test func importedPhotoTakesPriorityOverBundledAsset() {
+        let bytes = Data([0x01, 0x02])
+        let product = Product.fixture(assetName: "sample", photoData: bytes)
+
+        #expect(product.imageSource == .photoData(bytes))
+    }
+
+    @Test func bundledAssetIsUsedWithoutPhotoData() {
+        let product = Product.fixture(assetName: "sample", photoData: nil)
+
+        #expect(product.imageSource == .asset("sample"))
+    }
+
     @Test func welcomePhysicsMatchesInventoryCountAndPreservesRetainedBodies() {
         let products = Product.samples(referenceDate: date(2026, 9, 16))
         var state = WelcomePhysicsState()
@@ -89,13 +127,13 @@ struct InventoryModelTests {
         #expect(state.bodies.isEmpty)
     }
 
-    @Test func welcomePhysicsUsesOneHundredPointBlocks() {
+    @Test func welcomePhysicsUsesTheVisibleHundredPointSquareAsItsCollider() {
         let product = Product.samples(referenceDate: date(2026, 9, 16))[0]
         var state = WelcomePhysicsState()
 
         state.reconcile(products: [product], in: CGSize(width: 402, height: 874))
 
-        #expect(state.bodies[product.id]?.radius == 50)
+        #expect(state.bodies[product.id]?.halfSize == 50)
     }
 
     @Test func welcomePhysicsAcceleratesProductsLikeFallingIce() {
@@ -107,7 +145,38 @@ struct InventoryModelTests {
         state.step(deltaTime: 1.0 / 20.0, in: CGSize(width: 402, height: 874))
 
         let updatedVelocity = state.bodies[product.id]?.velocity.dy ?? 0
-        #expect(updatedVelocity - initialVelocity > 10)
+        #expect(updatedVelocity - initialVelocity > 30)
+    }
+
+    @Test func welcomePhysicsKeepsFallingBlocksSeparated() {
+        let sample = Product.samples(referenceDate: date(2026, 9, 16))[0]
+        let products = (0..<16).map { index in
+            Product(
+                id: UUID(index + 100),
+                brand: sample.brand,
+                name: "\(sample.name) \(index)",
+                assetName: sample.assetName,
+                openedDate: sample.openedDate,
+                periodAfterOpeningMonths: sample.periodAfterOpeningMonths,
+                printedExpirationDate: sample.printedExpirationDate,
+                isInUse: sample.isInUse
+            )
+        }
+        var state = WelcomePhysicsState()
+        state.reconcile(products: products, in: CGSize(width: 402, height: 874))
+
+        for _ in 0..<120 {
+            state.step(deltaTime: 1.0 / 60.0, in: CGSize(width: 402, height: 874))
+        }
+
+        let bodies = Array(state.bodies.values)
+        for firstIndex in bodies.indices {
+            for secondIndex in bodies.indices where secondIndex > firstIndex {
+                let first = bodies[firstIndex]
+                let second = bodies[secondIndex]
+                #expect(!WelcomePhysicsState.overlaps(first, second, tolerance: 0.5))
+            }
+        }
     }
 
     @Test(arguments: [(-0.5, 0.0), (0.0, 0.0), (0.4, 80.0), (1.0, 200.0), (1.5, 200.0)])
@@ -115,8 +184,34 @@ struct InventoryModelTests {
         #expect(ExpirationBar.fillWidth(totalWidth: 200, progress: progress) == expectedWidth)
     }
 
+    private func makeContainer() throws -> ModelContainer {
+        let configuration = ModelConfiguration(isStoredInMemoryOnly: true)
+        return try ModelContainer(for: Product.self, configurations: configuration)
+    }
+
     private func date(_ year: Int, _ month: Int, _ day: Int) -> Date {
         calendar.date(from: DateComponents(year: year, month: month, day: day))!
+    }
+}
+
+private extension Product {
+    static func fixture(
+        brand: String = "Brand",
+        name: String = "Product",
+        expiration: Date = .now,
+        assetName: String? = nil,
+        photoData: Data? = nil
+    ) -> Product {
+        Product(
+            brand: brand,
+            name: name,
+            assetName: assetName,
+            photoData: photoData,
+            openedDate: nil,
+            periodAfterOpeningMonths: 12,
+            printedExpirationDate: expiration,
+            isInUse: false
+        )
     }
 }
 

@@ -1,15 +1,48 @@
 import Foundation
 import Observation
+import SwiftData
 
-struct Product: Identifiable, Hashable, Sendable {
-    let id: UUID
-    let brand: String
-    let name: String
-    let assetName: String
-    let openedDate: Date?
-    let periodAfterOpeningMonths: Int
-    let printedExpirationDate: Date
-    let isInUse: Bool
+@Model
+final class Product: Identifiable, Hashable {
+    @Attribute(.unique) var id: UUID
+    var brand: String
+    var name: String
+    var assetName: String?
+    @Attribute(.externalStorage) var photoData: Data?
+    var openedDate: Date?
+    var periodAfterOpeningMonths: Int
+    var printedExpirationDate: Date
+    var isInUse: Bool
+
+    init(
+        id: UUID = UUID(),
+        brand: String,
+        name: String,
+        assetName: String? = nil,
+        photoData: Data? = nil,
+        openedDate: Date?,
+        periodAfterOpeningMonths: Int,
+        printedExpirationDate: Date,
+        isInUse: Bool
+    ) {
+        self.id = id
+        self.brand = brand
+        self.name = name
+        self.assetName = assetName
+        self.photoData = photoData
+        self.openedDate = openedDate
+        self.periodAfterOpeningMonths = periodAfterOpeningMonths
+        self.printedExpirationDate = printedExpirationDate
+        self.isInUse = isInUse
+    }
+
+    static func == (lhs: Product, rhs: Product) -> Bool {
+        lhs.id == rhs.id
+    }
+
+    func hash(into hasher: inout Hasher) {
+        hasher.combine(id)
+    }
 
     func effectiveExpirationDate(calendar: Calendar = .current) -> Date {
         guard isInUse,
@@ -43,6 +76,63 @@ struct Product: Identifiable, Hashable, Sendable {
         let remaining = expiration.timeIntervalSince(date)
         return min(max(remaining / total, 0), 1)
     }
+
+    static func visibleProducts(
+        _ products: [Product],
+        filter: InventoryFilter,
+        searchText: String,
+        referenceDate: Date
+    ) -> [Product] {
+        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        return products.filter { product in
+            let matchesFilter = switch filter {
+            case .all:
+                true
+            case .notInUse:
+                !product.isInUse
+            case .expiringSoon:
+                product.isExpiringSoon(on: referenceDate)
+            }
+            let matchesSearch = query.isEmpty
+                || product.brand.localizedCaseInsensitiveContains(query)
+                || product.name.localizedCaseInsensitiveContains(query)
+            return matchesFilter && matchesSearch
+        }
+        .sorted { left, right in
+            let leftExpiration = left.effectiveExpirationDate()
+            let rightExpiration = right.effectiveExpirationDate()
+            if leftExpiration != rightExpiration {
+                return leftExpiration < rightExpiration
+            }
+
+            let brandComparison = left.brand.localizedCompare(right.brand)
+            if brandComparison != .orderedSame {
+                return brandComparison == .orderedAscending
+            }
+
+            let nameComparison = left.name.localizedCompare(right.name)
+            if nameComparison != .orderedSame {
+                return nameComparison == .orderedAscending
+            }
+
+            return left.id.uuidString.localizedCompare(right.id.uuidString) == .orderedAscending
+        }
+    }
+
+    static func seedSamplesIfNeeded(
+        in context: ModelContext,
+        referenceDate: Date = .now
+    ) throws {
+        guard try context.fetchCount(FetchDescriptor<Product>()) == 0 else {
+            return
+        }
+
+        for product in samples(referenceDate: referenceDate) {
+            context.insert(product)
+        }
+        try context.save()
+    }
 }
 
 enum InventoryFilter: String, CaseIterable, Identifiable, Sendable {
@@ -71,18 +161,12 @@ final class InventoryStore {
     }
 
     var filteredProducts: [Product] {
-        products.filter { product in
-            let matchesFilter = switch selectedFilter {
-            case .all: true
-            case .notInUse: !product.isInUse
-            case .expiringSoon: product.isExpiringSoon(on: referenceDate)
-            }
-            let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
-            let matchesSearch = query.isEmpty
-                || product.brand.localizedCaseInsensitiveContains(query)
-                || product.name.localizedCaseInsensitiveContains(query)
-            return matchesFilter && matchesSearch
-        }
+        Product.visibleProducts(
+            products,
+            filter: selectedFilter,
+            searchText: searchText,
+            referenceDate: referenceDate
+        )
     }
 }
 
@@ -105,6 +189,6 @@ extension Product {
     }
 
     private static func stableID(_ value: Int) -> UUID {
-        UUID(uuidString: String(format: "10000000-0000-0000-0000-%012d", value))!
+        UUID(uuidString: String(format: "10000000-0000-0000-0000-%012d", value)) ?? UUID()
     }
 }

@@ -7,15 +7,16 @@ struct ProductCard: View {
     var body: some View {
         ZStack(alignment: .bottomLeading) {
             RoundedRectangle(cornerRadius: 17)
-                .fill(.white.opacity(0.10))
+                // EDIT HERE — neutral underlay opacity beneath the crystal-clear glass.
+                .fill(.white.opacity(0.035))
+                .glassEffect(.clear, in: .rect(cornerRadius: 17))
                 .overlay {
                     RoundedRectangle(cornerRadius: 17)
                         .stroke(.white.opacity(0.72), lineWidth: 0.8)
                 }
 
-            Image(product.assetName)
-                .resizable()
-                .scaledToFit()
+            // Product image region supports bundled assets and imported photos.
+            ProductImageView(product: product, contentMode: .fit)
                 .frame(maxWidth: .infinity)
                 .frame(height: 122)
                 .padding(.bottom, 48)
@@ -26,6 +27,7 @@ struct ProductCard: View {
                 startPoint: .top,
                 endPoint: .bottom
             )
+            // EDIT HERE — height of the selected blue gradient.
             .frame(height: 96)
             .clipShape(.rect(bottomLeadingRadius: 17, bottomTrailingRadius: 17))
 
@@ -40,7 +42,12 @@ struct ProductCard: View {
                     .lineLimit(2)
             }
             .padding(.horizontal, 16)
-            .padding(.bottom, 14)
+            // EDIT HERE — 60 pt is the bottom glass name panel (about one-third of the card).
+            .frame(maxWidth: .infinity, minHeight: 60, alignment: .leading)
+            .glassEffect(
+                .clear,
+                in: .rect(bottomLeadingRadius: 17, bottomTrailingRadius: 17)
+            )
 
             if product.isExpiringSoon(on: referenceDate) {
                 Text("\(product.daysRemaining(on: referenceDate)) d left")
@@ -53,8 +60,9 @@ struct ProductCard: View {
                     .padding(10)
             }
         }
+        // EDIT HERE — overall product-card height.
         .frame(height: 180)
-        .shadow(color: AppTheme.deepBlue.opacity(0.16), radius: 7, y: 5)
+        .shadow(color: AppTheme.deepBlue.opacity(0.10), radius: 1.5, y: 2)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(accessibilityLabel)
     }

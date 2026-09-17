@@ -9,16 +9,10 @@ struct ProductDetailsView: View {
 
     var body: some View {
         ZStack {
-            IcyBackground(snowOffset: 250, blurRadius: 18, snowOpacity: 0.52)
+            ProductDetailsBackground()
             ScrollView {
                 VStack(spacing: 12) {
-                    ProductDetailsHero(
-                        brand: product.brand,
-                        name: product.name,
-                        assetName: product.assetName,
-                        isInUse: product.isInUse,
-                        isVisible: heroIsVisible
-                    )
+                    ProductDetailsHero(product: product, isVisible: heroIsVisible)
                     ProductExpirationSection(product: product, referenceDate: referenceDate)
                     ProductFactsSection(product: product)
                     ProductReminderRow(selection: $reminder)
@@ -31,6 +25,7 @@ struct ProductDetailsView: View {
         .navigationTitle("Product Details")
         .navigationBarTitleDisplayMode(.inline)
         .toolbarVisibility(.visible, for: .navigationBar)
+        .toolbarBackground(.hidden, for: .navigationBar)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Button("Edit") { }
@@ -49,21 +44,47 @@ struct ProductDetailsView: View {
     }
 }
 
+private struct ProductDetailsBackground: View {
+    var body: some View {
+        GeometryReader { proxy in
+            ZStack(alignment: .top) {
+                LinearGradient(
+                    colors: [AppTheme.sky, AppTheme.ice],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+
+                // EDIT HERE — replace this asset to change the transparent snow/ice landscape.
+                Image("snow-background")
+                    .resizable()
+                    .scaledToFill()
+                    .frame(
+                        width: proxy.size.width,
+                        height: proxy.size.height,
+                        // Keep bottom alignment so the generated landscape is never cut off below.
+                        alignment: .bottom
+                    )
+                    .clipped()
+                    .accessibilityHidden(true)
+            }
+            .frame(width: proxy.size.width, height: proxy.size.height)
+        }
+        .ignoresSafeArea()
+    }
+}
+
 private struct ProductDetailsHero: View {
-    let brand: String
-    let name: String
-    let assetName: String
-    let isInUse: Bool
+    let product: Product
     let isVisible: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text(brand)
+            Text(product.brand)
                 .font(.title3)
-            Text(name)
+            Text(product.name)
                 .font(.title)
                 .fontWeight(.semibold)
-            Text(isInUse ? "In use" : "Not in use")
+            Text(product.isInUse ? "In use" : "Not in use")
                 .font(.subheadline)
                 .fontWeight(.bold)
                 .padding(.horizontal, 16)
@@ -71,15 +92,14 @@ private struct ProductDetailsHero: View {
                 .background(.white.opacity(0.15), in: Capsule())
                 .padding(.top, 4)
 
-            Image(assetName)
-                .resizable()
-                .scaledToFit()
+            // Product image region supports bundled assets and imported photos.
+            ProductImageView(product: product, contentMode: .fit)
                 .frame(maxWidth: .infinity)
                 .frame(height: 238)
                 .scaleEffect(isVisible ? 1 : 0.72)
                 .offset(y: isVisible ? 0 : 70)
                 .shadow(color: AppTheme.deepBlue.opacity(0.28), radius: 12, y: 10)
-                .accessibilityLabel("\(brand) \(name)")
+                .accessibilityLabel("\(product.brand) \(product.name)")
         }
         .foregroundStyle(AppTheme.deepBlue)
         .padding(.top, 12)
@@ -124,7 +144,7 @@ private struct ProductFactsSection: View {
                 Text("\(product.periodAfterOpeningMonths)")
                     .font(.title2)
                 Text("months")
-                    .font(.caption)
+                    .font(.subheadline)
             }
             ProductFactCard(title: "Expiration date") {
                 Text(product.printedExpirationDate, format: .dateTime.day().month().year())
@@ -157,8 +177,8 @@ private struct ProductFactCard<Content: View>: View {
             .multilineTextAlignment(.center)
         }
         .padding(.horizontal, 16)
-        .padding(.vertical, 32)
-        .frame(maxWidth: .infinity, minHeight: 174)
+        .padding(.vertical, 40)
+        .frame(maxWidth: .infinity, minHeight: 160)
         .background(.white.opacity(0.27), in: RoundedRectangle(cornerRadius: 16))
         .overlay {
             RoundedRectangle(cornerRadius: 16)
@@ -182,6 +202,7 @@ private struct ProductReminderRow: View {
             }
             .labelsHidden()
             .font(.headline)
+            .tint(AppTheme.deepBlue)
         }
         .foregroundStyle(AppTheme.deepBlue)
         .padding(.horizontal, 16)
