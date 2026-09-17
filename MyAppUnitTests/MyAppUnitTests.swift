@@ -110,7 +110,8 @@ struct InventoryModelTests {
 
         try context.deleteProduct(product)
 
-        #expect(try context.fetchCount(FetchDescriptor<Product>()) == 0)
+        let verificationContext = ModelContext(container)
+        #expect(try verificationContext.fetchCount(FetchDescriptor<Product>()) == 0)
     }
 
     @Test func importedPhotoTakesPriorityOverBundledAsset() {
