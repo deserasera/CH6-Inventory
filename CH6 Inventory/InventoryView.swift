@@ -71,6 +71,11 @@ struct InventoryView: View {
                 scrollOffset = max(newValue, 0)
             }
 
+            InventoryScrolledBackdrop()
+                // EDIT HERE — use statusBackdropProgress below to change how quickly this appears.
+                .opacity(statusBackdropProgress)
+                .allowsHitTesting(false)
+
             InventoryCompactHeader(count: visibleProducts.count)
                 .opacity(collapseProgress)
                 .allowsHitTesting(false)
@@ -137,6 +142,27 @@ struct InventoryView: View {
     private var collapseProgress: CGFloat {
         min(max(scrollOffset / 118, 0), 1)
     }
+
+    private var statusBackdropProgress: CGFloat {
+        // EDIT HERE — smaller divisor makes the status-bar background become opaque sooner.
+        min(max(scrollOffset / 24, 0), 1)
+    }
+}
+
+private struct InventoryScrolledBackdrop: View {
+    var body: some View {
+        VStack(spacing: 0) {
+            LinearGradient(
+                colors: [AppTheme.sky, AppTheme.sky, AppTheme.sky, .clear],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+            // EDIT HERE — height of the opaque-to-clear scrolled header background.
+            .frame(height: 152)
+            Spacer(minLength: 0)
+        }
+        .ignoresSafeArea(edges: .top)
+    }
 }
 
 private struct InventoryExpandedHeader: View {
@@ -200,24 +226,16 @@ private struct InventoryCompactHeader: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            LinearGradient(
-                colors: [AppTheme.sky, AppTheme.sky.opacity(0.92), .clear],
-                startPoint: .top,
-                endPoint: .bottom
-            )
-            .frame(height: 104)
-            .blur(radius: 6)
-            .overlay(alignment: .top) {
-                VStack(spacing: 0) {
-                    Text("Inventory")
-                        .font(.headline)
-                        .fontWeight(.bold)
-                    Text("\(count) items")
-                        .font(.caption)
-                }
-                .foregroundStyle(.white)
-                .padding(.top, 8)
+            VStack(spacing: 0) {
+                Text("Inventory")
+                    .font(.headline)
+                    .fontWeight(.bold)
+                Text("\(count) items")
+                    .font(.caption)
             }
+            .foregroundStyle(.white)
+            .padding(.top, 8)
+            .frame(height: 104, alignment: .top)
             Spacer()
         }
     }

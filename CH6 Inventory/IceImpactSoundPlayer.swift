@@ -7,42 +7,76 @@ final class IceImpactSoundPlayer {
     private let pitch = AVAudioUnitTimePitch()
     private var lastPlayback = Date.distantPast
     private var isPrepared = false
+    private var isActivationRequested = false
+    private var isSessionActive = false
+    private var pendingImpactSpeed: CGFloat?
 
     func play(impactSpeed: CGFloat) {
+#if os(iOS)
+        guard isSessionActive else {
+            pendingImpactSpeed = max(pendingImpactSpeed ?? 0, impactSpeed)
+            activateSessionIfNeeded()
+            return
+        }
+#endif
+        playPreparedImpact(speed: impactSpeed)
+    }
+
+    private func playPreparedImpact(speed impactSpeed: CGFloat) {
         let now = Date()
         guard now.timeIntervalSince(lastPlayback) >= 0.075 else { return }
         prepareIfNeeded()
         guard isPrepared, let buffer = makeBuffer(impactSpeed: impactSpeed) else { return }
 
+        // EDIT HERE — 42 is the audible-impact threshold; 360 is the loud-impact range.
         let normalized = min(max((impactSpeed - 42) / 360, 0), 1)
         player.volume = Float(0.12 + normalized * 0.34)
         pitch.pitch = Float(-90 + normalized * 210)
         player.scheduleBuffer(buffer, at: nil, options: .interrupts)
         if !player.isPlaying {
-            player.play()
+            do {
+                try player.playAudio()
+            } catch {
+                return
+            }
         }
         lastPlayback = now
     }
 
     private func prepareIfNeeded() {
         guard !isPrepared else { return }
-#if os(iOS)
-        try? AVAudioSession.sharedInstance().setCategory(.ambient, options: [.mixWithOthers])
-        try? AVAudioSession.sharedInstance().setActive(true)
-#endif
         let format = AVAudioFormat(standardFormatWithSampleRate: 44_100, channels: 1)!
         engine.attach(player)
         engine.attach(pitch)
-        engine.connect(player, to: pitch, format: format)
-        engine.connect(pitch, to: engine.mainMixerNode, format: format)
-        engine.prepare()
         do {
+            try engine.connectNode(player, to: pitch, format: format)
+            try engine.connectNode(pitch, to: engine.mainMixerNode, format: format)
+            engine.prepare()
             try engine.start()
             isPrepared = true
         } catch {
             isPrepared = false
         }
     }
+
+#if os(iOS)
+    private func activateSessionIfNeeded() {
+        guard !isActivationRequested else { return }
+        isActivationRequested = true
+        let session = AVAudioSession.sharedInstance()
+        try? session.setCategory(.ambient, options: [.mixWithOthers])
+        session.activate { [weak self] didActivate, _ in
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                self.isSessionActive = didActivate
+                self.isActivationRequested = false
+                guard didActivate, let impactSpeed = self.pendingImpactSpeed else { return }
+                self.pendingImpactSpeed = nil
+                self.playPreparedImpact(speed: impactSpeed)
+            }
+        }
+    }
+#endif
 
     private func makeBuffer(impactSpeed: CGFloat) -> AVAudioPCMBuffer? {
         let sampleRate = 44_100.0

@@ -7,7 +7,13 @@ struct WelcomeBody: Equatable, Sendable {
     var velocity: CGVector
     var angle: Double
     var angularVelocity: Double
+    // EDIT HERE — collider half-size; 50 matches the visible 100×100 block.
     var halfSize: CGFloat = 50
+
+    var rotatedExtent: CGFloat {
+        let radians = angle * .pi / 180
+        return halfSize * (abs(cos(radians)) + abs(sin(radians)))
+    }
 }
 
 struct WelcomeImpact: Equatable, Sendable {
@@ -15,6 +21,8 @@ struct WelcomeImpact: Equatable, Sendable {
 }
 
 struct WelcomePhysicsState: Sendable {
+    // EDIT HERE — extra invisible spacing around each 100 pt square collider.
+    private static let collisionSkin: CGFloat = 1.5
     private(set) var bodies: [Product.ID: WelcomeBody] = [:]
 
     mutating func reconcile(products: [Product], in size: CGSize) {
@@ -37,7 +45,8 @@ struct WelcomePhysicsState: Sendable {
 
         for id in ids {
             guard var body = bodies[id] else { continue }
-            body.velocity.dy += 760 * deltaTime
+            // EDIT HERE — increase gravity for a faster/heavier fall; decrease for a floatier fall.
+            body.velocity.dy += 980 * deltaTime
             body.position.x += body.velocity.dx * deltaTime
             body.position.y += body.velocity.dy * deltaTime
             body.angle += body.angularVelocity * deltaTime
@@ -50,7 +59,7 @@ struct WelcomePhysicsState: Sendable {
 
         // Iterative SAT resolution prevents a correction in a dense group from
         // pushing one rotating square through a neighboring square.
-        for _ in 0..<10 {
+        for _ in 0..<32 {
             for firstIndex in ids.indices {
                 for secondIndex in ids.indices where secondIndex > firstIndex {
                     strongestImpact = max(
@@ -58,6 +67,14 @@ struct WelcomePhysicsState: Sendable {
                         resolveCollision(ids[firstIndex], ids[secondIndex])
                     )
                 }
+            }
+            // Bounds are another collision constraint. Solving them every pass
+            // prevents the final screen-edge correction from pushing a square
+            // back through a neighbor at the bottom of a dense pile.
+            for id in ids {
+                guard var body = bodies[id] else { continue }
+                _ = resolveBounds(for: &body, in: size, applyBounce: false)
+                bodies[id] = body
             }
         }
 
@@ -76,7 +93,7 @@ struct WelcomePhysicsState: Sendable {
         _ second: WelcomeBody,
         tolerance: CGFloat = 0
     ) -> Bool {
-        collisionManifold(first, second)?.depth ?? 0 > tolerance
+        collisionManifold(first, second, padding: 0)?.depth ?? 0 > tolerance
     }
 
     private var sortedIDs: [Product.ID] {
@@ -91,8 +108,8 @@ struct WelcomePhysicsState: Sendable {
                     _ = resolveCollision(ids[firstIndex], ids[secondIndex], applyImpulse: false)
                 }
             }
-            for id in ids where bodies[id] != nil {
-                var body = bodies[id]!
+            for id in ids {
+                guard var body = bodies[id] else { continue }
                 _ = resolveBounds(for: &body, in: size, applyBounce: false)
                 bodies[id] = body
             }
@@ -100,32 +117,31 @@ struct WelcomePhysicsState: Sendable {
     }
 
     private func makeBody(for id: Product.ID, index: Int, size: CGSize) -> WelcomeBody {
-        let referencePositions: [CGPoint] = [
-            CGPoint(x: 315, y: 116), CGPoint(x: 230, y: 225),
-            CGPoint(x: 112, y: 390), CGPoint(x: 316, y: 545),
-            CGPoint(x: 105, y: 635), CGPoint(x: 253, y: 704),
-            CGPoint(x: 113, y: 812), CGPoint(x: 337, y: 810)
+        let referenceXPositions: [CGFloat] = [
+            315, 230, 112, 316, 105, 253, 113, 337
         ]
         let unit = deterministicUnit(for: id)
-        let position: CGPoint
-        if index < referencePositions.count {
-            let reference = referencePositions[index]
-            position = CGPoint(
-                x: reference.x / 402 * max(size.width, 1),
-                y: reference.y / 874 * max(size.height, 1)
-            )
+        let angle = (unit.x - 0.5) * 32
+        let halfSize: CGFloat = 50
+        let radians = angle * .pi / 180
+        let rotatedExtent = halfSize * (abs(cos(radians)) + abs(sin(radians)))
+        let xPosition: CGFloat
+        if index < referenceXPositions.count {
+            xPosition = referenceXPositions[index] / 402 * max(size.width, 1)
         } else {
-            position = CGPoint(
-                x: 58 + unit.x * max(size.width - 116, 1),
-                y: 78 + unit.y * max(size.height - 156, 1)
-            )
+            xPosition = 58 + unit.x * max(size.width - 116, 1)
         }
+        // Start every block fully above the viewport and stagger their entry.
+        let yPosition = -rotatedExtent - 12 - CGFloat(index) * 164
+
         return WelcomeBody(
             productID: id,
-            position: position,
+            position: CGPoint(x: xPosition, y: yPosition),
+            // EDIT HERE — `dy` controls how quickly newly created cubes begin falling.
             velocity: CGVector(dx: (unit.x - 0.5) * 36, dy: 55 + unit.y * 90),
-            angle: (unit.x - 0.5) * 32,
-            angularVelocity: (unit.y - 0.5) * 4
+            angle: angle,
+            angularVelocity: (unit.y - 0.5) * 4,
+            halfSize: halfSize
         )
     }
 
@@ -142,11 +158,11 @@ struct WelcomePhysicsState: Sendable {
         applyBounce: Bool = true
     ) -> CGFloat {
         let radians = body.angle * .pi / 180
-        let extent = body.halfSize * (abs(cos(radians)) + abs(sin(radians)))
+        let collisionHalfSize = body.halfSize + Self.collisionSkin
+        let extent = collisionHalfSize * (abs(cos(radians)) + abs(sin(radians)))
         let minX = extent
         let maxX = max(size.width - extent, minX)
-        let minY = extent + 24
-        let maxY = max(size.height - extent, minY)
+        let maxY = max(size.height - extent, extent + 24)
         var impact: CGFloat = 0
 
         if body.position.x < minX || body.position.x > maxX {
@@ -154,9 +170,9 @@ struct WelcomePhysicsState: Sendable {
             body.position.x = min(max(body.position.x, minX), maxX)
             if applyBounce { body.velocity.dx *= -0.34 }
         }
-        if body.position.y < minY || body.position.y > maxY {
+        if body.position.y > maxY {
             impact = max(impact, abs(body.velocity.dy))
-            body.position.y = min(max(body.position.y, minY), maxY)
+            body.position.y = maxY
             if applyBounce { body.velocity.dy *= -0.31 }
         }
         return impact
@@ -169,9 +185,13 @@ struct WelcomePhysicsState: Sendable {
     ) -> CGFloat {
         guard var first = bodies[firstID],
               var second = bodies[secondID],
-              let manifold = Self.collisionManifold(first, second) else { return 0 }
+              let manifold = Self.collisionManifold(
+                first,
+                second,
+                padding: Self.collisionSkin
+              ) else { return 0 }
 
-        let correction = max(manifold.depth - 0.05, 0) / 2
+        let correction = max(manifold.depth - 0.0001, 0) / 2
         first.position.x -= manifold.normal.dx * correction
         first.position.y -= manifold.normal.dy * correction
         second.position.x += manifold.normal.dx * correction
@@ -195,7 +215,8 @@ struct WelcomePhysicsState: Sendable {
 
     private static func collisionManifold(
         _ first: WelcomeBody,
-        _ second: WelcomeBody
+        _ second: WelcomeBody,
+        padding: CGFloat
     ) -> (normal: CGVector, depth: CGFloat)? {
         let firstAxes = axes(for: first.angle)
         let secondAxes = axes(for: second.angle)
@@ -209,8 +230,8 @@ struct WelcomePhysicsState: Sendable {
 
         for axis in axes {
             let centerDistance = abs(dot(delta, axis))
-            let firstRadius = projectedRadius(of: first, onto: axis)
-            let secondRadius = projectedRadius(of: second, onto: axis)
+            let firstRadius = projectedRadius(of: first, onto: axis, padding: padding)
+            let secondRadius = projectedRadius(of: second, onto: axis, padding: padding)
             let depth = firstRadius + secondRadius - centerDistance
             guard depth > 0 else { return nil }
             if depth < minimumDepth {
@@ -224,9 +245,13 @@ struct WelcomePhysicsState: Sendable {
         return (minimumAxis, minimumDepth)
     }
 
-    private static func projectedRadius(of body: WelcomeBody, onto axis: CGVector) -> CGFloat {
+    private static func projectedRadius(
+        of body: WelcomeBody,
+        onto axis: CGVector,
+        padding: CGFloat
+    ) -> CGFloat {
         let bodyAxes = axes(for: body.angle)
-        return body.halfSize * (
+        return (body.halfSize + padding) * (
             abs(dot(bodyAxes.0, axis)) + abs(dot(bodyAxes.1, axis))
         )
     }

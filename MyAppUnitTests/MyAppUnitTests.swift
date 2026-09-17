@@ -214,6 +214,17 @@ struct InventoryModelTests {
         #expect(state.bodies[product.id]?.halfSize == 50)
     }
 
+    @Test func welcomePhysicsStartsEveryProductFullyAboveTheScreen() {
+        let products = Product.samples(referenceDate: date(2026, 9, 16))
+        var state = WelcomePhysicsState()
+
+        state.reconcile(products: products, in: CGSize(width: 402, height: 874))
+
+        #expect(state.bodies.values.allSatisfy { body in
+            body.position.y + body.rotatedExtent <= 0
+        })
+    }
+
     @Test func welcomePhysicsAcceleratesProductsLikeFallingIce() {
         let product = Product.samples(referenceDate: date(2026, 9, 16))[0]
         var state = WelcomePhysicsState()
@@ -257,9 +268,26 @@ struct InventoryModelTests {
         }
     }
 
+    @Test func welcomeCollisionSoundOnlyPlaysForTheFirstImpact() {
+        var gate = WelcomeImpactSoundGate()
+        let firstImpact = gate.shouldPlayImpact()
+        let secondImpact = gate.shouldPlayImpact()
+        let thirdImpact = gate.shouldPlayImpact()
+
+        #expect(firstImpact)
+        #expect(!secondImpact)
+        #expect(!thirdImpact)
+    }
+
     @Test(arguments: [(-0.5, 0.0), (0.0, 0.0), (0.4, 80.0), (1.0, 200.0), (1.5, 200.0)])
     func expirationBarFillIsClamped(progress: Double, expectedWidth: Double) {
         #expect(ExpirationBar.fillWidth(totalWidth: 200, progress: progress) == expectedWidth)
+    }
+
+    @Test func productCardFooterBlurConfigurationFitsWithinTheCard() {
+        #expect(ProductCard.footerHeight > 0)
+        #expect(ProductCard.footerHeight < 180)
+        #expect(ProductCard.footerBlurRadius >= 0)
     }
 
     private func makeContainer() throws -> ModelContainer {

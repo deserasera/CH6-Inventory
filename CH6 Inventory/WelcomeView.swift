@@ -10,6 +10,7 @@ struct WelcomeView: View {
     @State private var dragProgress: CGFloat = 0
     @State private var isCompleting = false
     @State private var soundPlayer = IceImpactSoundPlayer()
+    @State private var impactSoundGate = WelcomeImpactSoundGate()
 
     var body: some View {
         GeometryReader { proxy in
@@ -46,7 +47,7 @@ struct WelcomeView: View {
                     if let impact = physics.step(
                         deltaTime: newDate.timeIntervalSince(previous),
                         in: proxy.size
-                    ) {
+                    ), impactSoundGate.shouldPlayImpact() {
                         soundPlayer.play(impactSpeed: impact.speed)
                     }
                     lastTick = newDate
