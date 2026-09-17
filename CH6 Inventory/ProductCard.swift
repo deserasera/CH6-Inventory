@@ -1,19 +1,22 @@
 import SwiftUI
 
 struct ProductCard: View {
+    static let backgroundAssetName = "product-card-background"
+    static let overlayAssetName = "product-card-overlay"
+
     let product: Product
     let referenceDate: Date
 
     var body: some View {
         ZStack(alignment: .bottomLeading) {
-            RoundedRectangle(cornerRadius: 17)
-                // EDIT HERE — neutral underlay opacity beneath the crystal-clear glass.
-                .fill(.white.opacity(0.035))
-                .glassEffect(.clear, in: .rect(cornerRadius: 17))
-                .overlay {
-                    RoundedRectangle(cornerRadius: 17)
-                        .stroke(.white.opacity(0.72), lineWidth: 0.8)
-                }
+            // Supplied background artwork replaces the generated card surface.
+            Image(Self.backgroundAssetName)
+                .resizable()
+                .scaledToFill()
+                .frame(maxWidth: .infinity)
+                .frame(height: 180)
+                .clipped()
+                .accessibilityHidden(true)
 
             // Product image region supports bundled assets and imported photos.
             ProductImageView(product: product, contentMode: .fit)
@@ -22,14 +25,15 @@ struct ProductCard: View {
                 .padding(.bottom, 48)
                 .accessibilityHidden(true)
 
-            LinearGradient(
-                colors: [AppTheme.selectedBlue.opacity(0), AppTheme.selectedBlue.opacity(0.92)],
-                startPoint: .top,
-                endPoint: .bottom
-            )
-            // EDIT HERE — height of the selected blue gradient.
-            .frame(height: 96)
-            .clipShape(.rect(bottomLeadingRadius: 17, bottomTrailingRadius: 17))
+            // Supplied liquid-glass artwork sits in front of the product image.
+            Image(Self.overlayAssetName)
+                .resizable()
+                .scaledToFill()
+                .frame(maxWidth: .infinity)
+                .frame(height: 180)
+                .clipped()
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
 
             VStack(alignment: .leading, spacing: 1) {
                 Text(product.brand)
@@ -42,12 +46,8 @@ struct ProductCard: View {
                     .lineLimit(2)
             }
             .padding(.horizontal, 16)
-            // EDIT HERE — 60 pt is the bottom glass name panel (about one-third of the card).
+            // Keep product details above both supplied card layers.
             .frame(maxWidth: .infinity, minHeight: 60, alignment: .leading)
-            .glassEffect(
-                .clear,
-                in: .rect(bottomLeadingRadius: 17, bottomTrailingRadius: 17)
-            )
 
             if product.isExpiringSoon(on: referenceDate) {
                 Text("\(product.daysRemaining(on: referenceDate)) d left")

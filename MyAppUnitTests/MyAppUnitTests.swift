@@ -2,6 +2,7 @@ import CoreGraphics
 import Foundation
 import SwiftData
 import Testing
+import UIKit
 @testable import CH6_Inventory
 
 @MainActor
@@ -284,10 +285,11 @@ struct InventoryModelTests {
         #expect(ExpirationBar.fillWidth(totalWidth: 200, progress: progress) == expectedWidth)
     }
 
-    @Test func productCardFooterBlurConfigurationFitsWithinTheCard() {
-        #expect(ProductCard.footerHeight > 0)
-        #expect(ProductCard.footerHeight < 180)
-        #expect(ProductCard.footerBlurRadius >= 0)
+    @Test func productCardUsesProvidedBackgroundAndOverlayAssets() {
+        #expect(ProductCard.backgroundAssetName == "product-card-background")
+        #expect(ProductCard.overlayAssetName == "product-card-overlay")
+        #expect(UIImage(named: ProductCard.backgroundAssetName) != nil)
+        #expect(UIImage(named: ProductCard.overlayAssetName) != nil)
     }
 
     private func makeContainer() throws -> ModelContainer {
