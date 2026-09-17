@@ -67,11 +67,14 @@ struct InventoryModelTests {
             openedDate: date(2025, 1, 1), periodAfterOpeningMonths: 48,
             printedExpirationDate: date(2029, 1, 1), isInUse: true
         )
-        let store = InventoryStore(products: [matching, other], referenceDate: reference)
-        store.selectedFilter = .notInUse
-        store.searchText = "lane"
+        let visibleProducts = Product.visibleProducts(
+            [matching, other],
+            filter: .notInUse,
+            searchText: "lane",
+            referenceDate: reference
+        )
 
-        #expect(store.filteredProducts.map(\.id) == [matching.id])
+        #expect(visibleProducts.map(\.id) == [matching.id])
     }
 
     @Test func visibleProductsSortByEffectiveExpirationThenName() {
@@ -96,6 +99,18 @@ struct InventoryModelTests {
         try Product.seedSamplesIfNeeded(in: container.mainContext, referenceDate: date(2026, 9, 17))
 
         #expect(try container.mainContext.fetchCount(FetchDescriptor<Product>()) == 8)
+    }
+
+    @Test func deletingProductRemovesItFromPersistentInventory() throws {
+        let container = try makeContainer()
+        let context = container.mainContext
+        let product = Product.fixture(name: "Delete Me")
+        context.insert(product)
+        try context.save()
+
+        try context.deleteProduct(product)
+
+        #expect(try context.fetchCount(FetchDescriptor<Product>()) == 0)
     }
 
     @Test func importedPhotoTakesPriorityOverBundledAsset() {

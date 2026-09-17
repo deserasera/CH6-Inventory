@@ -1,5 +1,4 @@
 import Foundation
-import Observation
 import SwiftData
 
 @Model
@@ -135,39 +134,25 @@ final class Product: Identifiable, Hashable {
     }
 }
 
+extension ModelContext {
+    func deleteProduct(_ product: Product) throws {
+        delete(product)
+
+        do {
+            try save()
+        } catch {
+            rollback()
+            throw error
+        }
+    }
+}
+
 enum InventoryFilter: String, CaseIterable, Identifiable, Sendable {
     case all = "All"
     case notInUse = "Not in use"
     case expiringSoon = "Expiring soon"
 
     var id: Self { self }
-}
-
-@MainActor
-@Observable
-final class InventoryStore {
-    var products: [Product]
-    var selectedFilter: InventoryFilter = .all
-    var searchText = ""
-    let referenceDate: Date
-
-    init(products: [Product], referenceDate: Date = .now) {
-        self.products = products
-        self.referenceDate = referenceDate
-    }
-
-    convenience init(referenceDate: Date = .now) {
-        self.init(products: Product.samples(referenceDate: referenceDate), referenceDate: referenceDate)
-    }
-
-    var filteredProducts: [Product] {
-        Product.visibleProducts(
-            products,
-            filter: selectedFilter,
-            searchText: searchText,
-            referenceDate: referenceDate
-        )
-    }
 }
 
 extension Product {

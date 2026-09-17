@@ -3,9 +3,10 @@ import SwiftUI
 
 struct ContentView: View {
     @Environment(\.modelContext) private var modelContext
-    @State private var store = InventoryStore()
+    @Query private var products: [Product]
     @State private var hasEnteredInventory = false
     @State private var inventoryErrorMessage: String?
+    @State private var referenceDate = Date.now
 
     var body: some View {
         ZStack {
@@ -14,19 +15,25 @@ struct ContentView: View {
 
             if hasEnteredInventory {
                 NavigationStack {
-                    InventoryView(store: store)
+                    InventoryView(referenceDate: referenceDate)
                         .navigationDestination(for: Product.ID.self) { productID in
-                            if let product = store.products.first(where: { $0.id == productID }) {
+                            if let product = products.first(where: { $0.id == productID }) {
                                 ProductDetailsView(
                                     product: product,
-                                    referenceDate: store.referenceDate
+                                    referenceDate: referenceDate
+                                )
+                            } else {
+                                ContentUnavailableView(
+                                    "Product Not Found",
+                                    systemImage: "shippingbox",
+                                    description: Text("This product may have been deleted.")
                                 )
                             }
                         }
                 }
                 .transition(.move(edge: .bottom).combined(with: .opacity))
             } else {
-                WelcomeView(products: store.products) {
+                WelcomeView(products: products) {
                     withAnimation(.smooth(duration: 0.72, extraBounce: 0.05)) {
                         hasEnteredInventory = true
                     }
