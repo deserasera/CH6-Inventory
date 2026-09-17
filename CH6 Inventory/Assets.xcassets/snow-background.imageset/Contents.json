@@ -1,11 +1,12 @@
 {
   "images" : [
     {
-      "filename" : "snow-background.png",
+      "filename" : "Untitled design (1).png",
       "idiom" : "universal",
       "scale" : "1x"
     },
     {
+      "filename" : "snow-background.png",
       "idiom" : "universal",
       "scale" : "2x"
     },
