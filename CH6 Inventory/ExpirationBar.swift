@@ -2,7 +2,7 @@ import SwiftUI
 
 struct ExpirationBar: View {
     let progress: Double
-    let daysRemaining: Int
+    var height: CGFloat = 21
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var displayedProgress = 0.0
 
@@ -25,20 +25,9 @@ struct ExpirationBar: View {
                         .frame(width: 48)
                         .clipShape(Capsule())
                     }
-                if displayedProgress > 0.28 {
-                    Text("\(daysRemaining) days remaining")
-                        .font(.caption2)
-                        .fontWeight(.semibold)
-                        .foregroundStyle(.white)
-                        .frame(maxWidth: Self.fillWidth(
-                            totalWidth: proxy.size.width,
-                            progress: displayedProgress
-                        ))
-                        .transition(.opacity)
-                }
             }
         }
-        .frame(height: 21)
+        .frame(height: height)
         .onAppear {
             if reduceMotion {
                 displayedProgress = progress
@@ -49,7 +38,7 @@ struct ExpirationBar: View {
             }
         }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(daysRemaining) days remaining")
+        .accessibilityLabel("Shelf life remaining")
         .accessibilityValue("\(Int(progress * 100)) percent")
     }
 

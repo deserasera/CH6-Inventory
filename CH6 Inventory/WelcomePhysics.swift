@@ -7,6 +7,7 @@ struct WelcomeBody: Equatable, Sendable {
     var velocity: CGVector
     var angle: Double
     var angularVelocity: Double
+    var hasEnteredViewport = false
     // EDIT HERE — collider half-size; 50 matches the visible 100×100 block.
     var halfSize: CGFloat = 50
 
@@ -23,7 +24,18 @@ struct WelcomeImpact: Equatable, Sendable {
 struct WelcomePhysicsState: Sendable {
     // EDIT HERE — extra invisible spacing around each 100 pt square collider.
     private static let collisionSkin: CGFloat = 1.5
+    // EDIT HERE — tilt-to-spin response in degrees per second.
+    private static let tiltSpinMultiplier: Double = 18
+    // EDIT HERE — how much collisions add extra visible spin.
+    private static let collisionSpinMultiplier: Double = 0.025
     private(set) var bodies: [Product.ID: WelcomeBody] = [:]
+    private var previousGravity = CGVector(dx: 0, dy: 1)
+
+    var maximumMotionSpeed: CGFloat {
+        bodies.values.reduce(0) { maximum, body in
+            max(maximum, hypot(body.velocity.dx, body.velocity.dy))
+        }
+    }
 
     mutating func reconcile(products: [Product], in size: CGSize) {
         let validIDs = Set(products.map(\.id))
@@ -37,7 +49,11 @@ struct WelcomePhysicsState: Sendable {
     }
 
     @discardableResult
-    mutating func step(deltaTime rawDeltaTime: TimeInterval, in size: CGSize) -> WelcomeImpact? {
+    mutating func step(
+        deltaTime rawDeltaTime: TimeInterval,
+        in size: CGSize,
+        gravity: CGVector = CGVector(dx: 0, dy: 1)
+    ) -> WelcomeImpact? {
         let deltaTime = min(max(rawDeltaTime, 0), 1.0 / 30.0)
         guard deltaTime > 0 else { return nil }
         let ids = sortedIDs
@@ -45,17 +61,24 @@ struct WelcomePhysicsState: Sendable {
 
         for id in ids {
             guard var body = bodies[id] else { continue }
-            // EDIT HERE — increase gravity for a faster/heavier fall; decrease for a floatier fall.
-            body.velocity.dy += 980 * deltaTime
+            let acceleration = Self.acceleration(for: gravity)
+            let gravityDelta = CGVector(
+                dx: gravity.dx - previousGravity.dx,
+                dy: gravity.dy - previousGravity.dy
+            )
+            body.angularVelocity += Self.tiltSpin(for: gravityDelta)
+            body.velocity.dx += acceleration.dx * deltaTime
+            body.velocity.dy += acceleration.dy * deltaTime
             body.position.x += body.velocity.dx * deltaTime
             body.position.y += body.velocity.dy * deltaTime
             body.angle += body.angularVelocity * deltaTime
             body.velocity.dx *= 0.994
             body.velocity.dy *= 0.994
-            body.angularVelocity *= 0.992
+            body.angularVelocity *= 0.90
             strongestImpact = max(strongestImpact, resolveBounds(for: &body, in: size))
             bodies[id] = body
         }
+        previousGravity = gravity
 
         // Iterative SAT resolution prevents a correction in a dense group from
         // pushing one rotating square through a neighboring square.
@@ -86,6 +109,15 @@ struct WelcomePhysicsState: Sendable {
         }
 
         return strongestImpact >= 42 ? WelcomeImpact(speed: strongestImpact) : nil
+    }
+
+    nonisolated static func acceleration(for gravity: CGVector) -> CGVector {
+        // EDIT HERE — increase 980 for heavier movement; decrease it for a floatier response.
+        CGVector(dx: gravity.dx * 980, dy: gravity.dy * 980)
+    }
+
+    static func tiltSpin(for gravityDelta: CGVector) -> Double {
+        Double(gravityDelta.dx - gravityDelta.dy * 0.35) * tiltSpinMultiplier
     }
 
     static func overlaps(
@@ -140,7 +172,7 @@ struct WelcomePhysicsState: Sendable {
             // EDIT HERE — `dy` controls how quickly newly created cubes begin falling.
             velocity: CGVector(dx: (unit.x - 0.5) * 36, dy: 55 + unit.y * 90),
             angle: angle,
-            angularVelocity: (unit.y - 0.5) * 4,
+            angularVelocity: 0,
             halfSize: halfSize
         )
     }
@@ -165,15 +197,33 @@ struct WelcomePhysicsState: Sendable {
         let maxY = max(size.height - extent, extent + 24)
         var impact: CGFloat = 0
 
+        if body.position.y - extent >= 0 {
+            body.hasEnteredViewport = true
+        }
+
         if body.position.x < minX || body.position.x > maxX {
             impact = max(impact, abs(body.velocity.dx))
             body.position.x = min(max(body.position.x, minX), maxX)
-            if applyBounce { body.velocity.dx *= -0.34 }
+            if applyBounce {
+                body.angularVelocity += body.velocity.dx > 0 ? 2.5 : -2.5
+                body.velocity.dx *= -0.34
+            }
         }
         if body.position.y > maxY {
             impact = max(impact, abs(body.velocity.dy))
             body.position.y = maxY
-            if applyBounce { body.velocity.dy *= -0.31 }
+            if applyBounce {
+                body.angularVelocity += body.velocity.dx >= 0 ? 3 : -3
+                body.velocity.dy *= -0.31
+            }
+        }
+        if body.hasEnteredViewport, body.position.y < extent {
+            impact = max(impact, abs(body.velocity.dy))
+            body.position.y = extent
+            if applyBounce {
+                body.angularVelocity += body.velocity.dx >= 0 ? -2 : 2
+                body.velocity.dy *= -0.31
+            }
         }
         return impact
     }
@@ -206,6 +256,9 @@ struct WelcomePhysicsState: Sendable {
             first.velocity.dy -= impulse * manifold.normal.dy
             second.velocity.dx += impulse * manifold.normal.dx
             second.velocity.dy += impulse * manifold.normal.dy
+            let spinImpulse = Double(impulse) * Self.collisionSpinMultiplier
+            first.angularVelocity -= spinImpulse
+            second.angularVelocity += spinImpulse
         }
 
         bodies[firstID] = first

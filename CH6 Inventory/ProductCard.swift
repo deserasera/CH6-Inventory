@@ -3,12 +3,14 @@ import SwiftUI
 struct ProductCard: View {
     static let backgroundAssetName = "product-card-background"
     static let overlayAssetName = "product-card-overlay"
+    static let detailsFrameAlignment = Alignment.bottomLeading
+    static let detailsBottomPadding: CGFloat = 16
 
     let product: Product
     let referenceDate: Date
 
     var body: some View {
-        ZStack(alignment: .bottomLeading) {
+        ZStack(alignment: Self.detailsFrameAlignment) {
             // Supplied background artwork replaces the generated card surface.
             Image(Self.backgroundAssetName)
                 .resizable()
@@ -35,23 +37,27 @@ struct ProductCard: View {
                 .allowsHitTesting(false)
                 .accessibilityHidden(true)
 
+            RoundedRectangle(cornerRadius: 16)
+                .stroke(.white.opacity(0.5), lineWidth: 0.3)
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
+
             VStack(alignment: .leading, spacing: 1) {
                 Text(product.brand)
-                    .font(.caption2)
-                    .foregroundStyle(.white.opacity(0.78))
+                    .font(AppTypography.captionRegular)
+                    .foregroundStyle(AppTheme.selectedBlue)
                 Text(product.name)
-                    .font(.subheadline)
-                    .fontWeight(.semibold)
-                    .foregroundStyle(.white)
+                    .font(AppTypography.smallBodySemibold)
+                    .foregroundStyle(AppTheme.deepBlue)
                     .lineLimit(2)
             }
+            .frame(height: 56, alignment: .bottomLeading)
             .padding(.horizontal, 16)
-            // Keep product details above both supplied card layers.
-            .frame(maxWidth: .infinity, minHeight: 60, alignment: .leading)
+            .padding(.bottom, Self.detailsBottomPadding)
 
             if product.isExpiringSoon(on: referenceDate) {
                 Text("\(product.daysRemaining(on: referenceDate)) d left")
-                    .font(.system(size: 9, weight: .bold))
+                    .font(AppTypography.captionMedium)
                     .foregroundStyle(.white)
                     .padding(.horizontal, 9)
                     .padding(.vertical, 7)

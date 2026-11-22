@@ -1,6 +1,7 @@
 import CoreGraphics
 import Foundation
 import SwiftData
+import SwiftUI
 import Testing
 import UIKit
 @testable import CH6_Inventory
@@ -158,6 +159,38 @@ struct InventoryModelTests {
         #expect(draft.isValid(hasPhoto: true))
     }
 
+    @Test func addDraftCanBeOpenedWithoutCurrentlyInUse() {
+        let opened = date(2026, 9, 1)
+        var draft = AddProductDraft()
+
+        draft.setOpened(true, defaultDate: opened)
+        draft.setInUse(false, defaultOpenedDate: date(2026, 9, 2))
+
+        #expect(draft.openedDate == opened)
+        #expect(!draft.isInUse)
+    }
+
+    @Test func addDraftCurrentlyInUseAutomaticallyMarksProductOpened() {
+        let opened = date(2026, 9, 1)
+        var draft = AddProductDraft()
+
+        draft.setInUse(true, defaultOpenedDate: opened)
+
+        #expect(draft.openedDate == opened)
+        #expect(draft.isInUse)
+    }
+
+    @Test func addDraftClearingOpenedAlsoClearsCurrentlyInUse() {
+        var draft = AddProductDraft()
+        draft.openedDate = date(2026, 9, 1)
+        draft.isInUse = true
+
+        draft.setOpened(false, defaultDate: date(2026, 9, 2))
+
+        #expect(draft.openedDate == nil)
+        #expect(!draft.isInUse)
+    }
+
     @Test func addDraftAcceptsCompleteUnusedProduct() {
         var draft = AddProductDraft()
         draft.brand = "Laneige"
@@ -188,6 +221,70 @@ struct InventoryModelTests {
         #expect(product.periodAfterOpeningMonths == 18)
         #expect(product.printedExpirationDate == expirationDate)
         #expect(product.isInUse)
+    }
+
+    @Test func addDraftCanBePrefilledFromExistingProduct() {
+        let openedDate = date(2026, 9, 1)
+        let expirationDate = date(2027, 9, 1)
+        let product = Product(
+            brand: "Laneige",
+            name: "Lip Sleeping Mask",
+            assetName: "laneige-mask",
+            openedDate: openedDate,
+            periodAfterOpeningMonths: 18,
+            printedExpirationDate: expirationDate,
+            isInUse: true
+        )
+
+        let draft = AddProductDraft(product: product)
+
+        #expect(draft.brand == "Laneige")
+        #expect(draft.name == "Lip Sleeping Mask")
+        #expect(draft.isInUse)
+        #expect(draft.openedDate == openedDate)
+        #expect(draft.periodAfterOpeningMonths == 18)
+        #expect(draft.printedExpirationDate == expirationDate)
+    }
+
+    @Test func addDraftUpdatesExistingProductWithoutReplacingBundledAsset() {
+        let openedDate = date(2026, 10, 1)
+        let expirationDate = date(2028, 1, 1)
+        let product = Product.fixture(
+            brand: "Old Brand",
+            name: "Old Name",
+            expiration: date(2027, 1, 1),
+            assetName: "sample-asset",
+            photoData: nil
+        )
+        var draft = AddProductDraft()
+        draft.brand = "  New Brand "
+        draft.name = "\nNew Name  "
+        draft.isInUse = true
+        draft.openedDate = openedDate
+        draft.periodAfterOpeningMonths = 24
+        draft.printedExpirationDate = expirationDate
+
+        draft.update(product, photoData: nil)
+
+        #expect(product.brand == "New Brand")
+        #expect(product.name == "New Name")
+        #expect(product.assetName == "sample-asset")
+        #expect(product.photoData == nil)
+        #expect(product.openedDate == openedDate)
+        #expect(product.periodAfterOpeningMonths == 24)
+        #expect(product.printedExpirationDate == expirationDate)
+        #expect(product.isInUse)
+    }
+
+    @Test func addDraftUpdatesExistingProductWithNewImportedPhoto() {
+        let product = Product.fixture(assetName: "sample-asset", photoData: nil)
+        let newPhoto = Data([0x09, 0x08, 0x07])
+        let draft = AddProductDraft(product: product)
+
+        draft.update(product, photoData: newPhoto)
+
+        #expect(product.assetName == nil)
+        #expect(product.photoData == newPhoto)
     }
 
     @Test func welcomePhysicsMatchesInventoryCountAndPreservesRetainedBodies() {
@@ -238,6 +335,72 @@ struct InventoryModelTests {
         #expect(updatedVelocity - initialVelocity > 30)
     }
 
+    @Test func welcomePhysicsDoesNotKeepRotatingWithStableGravity() {
+        let product = Product.samples(referenceDate: date(2026, 9, 16))[0]
+        var state = WelcomePhysicsState()
+        state.reconcile(products: [product], in: CGSize(width: 402, height: 874))
+        let initialAngle = state.bodies[product.id]?.angle ?? 0
+
+        for _ in 0..<30 {
+            state.step(deltaTime: 1.0 / 60.0, in: CGSize(width: 402, height: 874))
+        }
+
+        let updatedAngle = state.bodies[product.id]?.angle ?? 0
+        #expect(abs(updatedAngle - initialAngle) < 1)
+    }
+
+    @Test func welcomePhysicsRotatesSlightlyWhenDeviceGravityChanges() {
+        let product = Product.samples(referenceDate: date(2026, 9, 16))[0]
+        var state = WelcomePhysicsState()
+        state.reconcile(products: [product], in: CGSize(width: 402, height: 874))
+        let initialAngle = state.bodies[product.id]?.angle ?? 0
+
+        state.step(
+            deltaTime: 1.0 / 60.0,
+            in: CGSize(width: 402, height: 874),
+            gravity: CGVector(dx: 0, dy: 1)
+        )
+        state.step(
+            deltaTime: 1.0 / 60.0,
+            in: CGSize(width: 402, height: 874),
+            gravity: CGVector(dx: 0.45, dy: 0.89)
+        )
+        for _ in 0..<20 {
+            state.step(
+                deltaTime: 1.0 / 60.0,
+                in: CGSize(width: 402, height: 874),
+                gravity: CGVector(dx: 0.45, dy: 0.89)
+            )
+        }
+
+        let updatedAngle = state.bodies[product.id]?.angle ?? 0
+        #expect(abs(updatedAngle - initialAngle) > 0.2)
+        #expect(abs(updatedAngle - initialAngle) < 5)
+    }
+
+    @Test func deviceGravityMapsToSwiftUIScreenCoordinates() {
+        #expect(
+            DeviceGravityMapping.physicsGravity(x: 0.4, y: -0.8)
+                == CGVector(dx: 0.4, dy: 0.8)
+        )
+        #expect(
+            DeviceGravityMapping.physicsGravity(x: 0, y: 1)
+                == CGVector(dx: 0, dy: -1)
+        )
+    }
+
+    @Test func welcomePhysicsAcceleratesInTheDeviceGravityDirection() {
+        #expect(
+            WelcomePhysicsState.acceleration(
+                for: CGVector(dx: 0.4, dy: -0.8)
+            ) == CGVector(dx: 392, dy: -784)
+        )
+    }
+
+    @Test func reduceMotionDoesNotPauseWelcomePhysics() {
+        #expect(!WelcomeMotionPolicy.pausesPhysics(reduceMotionEnabled: true))
+    }
+
     @Test func welcomePhysicsKeepsFallingBlocksSeparated() {
         let sample = Product.samples(referenceDate: date(2026, 9, 16))[0]
         let products = (0..<16).map { index in
@@ -269,15 +432,86 @@ struct InventoryModelTests {
         }
     }
 
-    @Test func welcomeCollisionSoundOnlyPlaysForTheFirstImpact() {
-        var gate = WelcomeImpactSoundGate()
-        let firstImpact = gate.shouldPlayImpact()
-        let secondImpact = gate.shouldPlayImpact()
-        let thirdImpact = gate.shouldPlayImpact()
+    @Test func welcomeFeedbackTriggersAgainForASeparateMovingImpact() {
+        var gate = WelcomeImpactFeedbackGate()
+
+        let firstImpact = gate.shouldTrigger(impactSpeed: 120, motionSpeed: 120, at: 0)
+        let duplicateImpact = gate.shouldTrigger(impactSpeed: 120, motionSpeed: 120, at: 0.02)
+        let separateImpact = gate.shouldTrigger(impactSpeed: 120, motionSpeed: 120, at: 0.08)
 
         #expect(firstImpact)
-        #expect(!secondImpact)
-        #expect(!thirdImpact)
+        #expect(!duplicateImpact)
+        #expect(separateImpact)
+    }
+
+    @Test func welcomeFeedbackIgnoresSettledContacts() {
+        var gate = WelcomeImpactFeedbackGate()
+
+        let slowImpact = gate.shouldTrigger(impactSpeed: 41, motionSpeed: 120, at: 0)
+        let settledContact = gate.shouldTrigger(impactSpeed: 120, motionSpeed: 5, at: 1)
+
+        #expect(!slowImpact)
+        #expect(!settledContact)
+    }
+
+    @Test func productIdentityDetectionFindsKnownBrandAndProductName() {
+        let observations = [
+            ProductTextObservation(
+                text: "KIEHL'S",
+                confidence: 0.96,
+                boundingBox: CGRect(x: 0.2, y: 0.78, width: 0.6, height: 0.10)
+            ),
+            ProductTextObservation(
+                text: "Clearly Corrective Dark Spot Solution",
+                confidence: 0.94,
+                boundingBox: CGRect(x: 0.12, y: 0.54, width: 0.76, height: 0.12)
+            ),
+            ProductTextObservation(
+                text: "30 ml",
+                confidence: 0.99,
+                boundingBox: CGRect(x: 0.4, y: 0.12, width: 0.2, height: 0.04)
+            )
+        ]
+
+        let suggestion = ProductIdentityDetector.suggestion(from: observations)
+
+        #expect(suggestion.brand == "Kiehl’s")
+        #expect(suggestion.name == "Clearly Corrective Dark Spot Solution")
+    }
+
+    @Test func productIdentityDetectionLeavesUnclearBrandEmpty() {
+        let observations = [
+            ProductTextObservation(
+                text: "GLOW LABORATORY",
+                confidence: 0.58,
+                boundingBox: CGRect(x: 0.2, y: 0.8, width: 0.6, height: 0.08)
+            ),
+            ProductTextObservation(
+                text: "Hydrating Serum",
+                confidence: 0.93,
+                boundingBox: CGRect(x: 0.2, y: 0.55, width: 0.6, height: 0.11)
+            )
+        ]
+
+        let suggestion = ProductIdentityDetector.suggestion(from: observations)
+
+        #expect(suggestion.brand == nil)
+        #expect(suggestion.name == "Hydrating Serum")
+    }
+
+    @Test func detectedIdentityOnlyFillsBlankEditableFields() {
+        var draft = AddProductDraft(brand: "My Brand", name: "")
+
+        draft.apply(
+            ProductIdentitySuggestion(brand: "Laneige", name: "Lip Sleeping Mask")
+        )
+
+        #expect(draft.brand == "My Brand")
+        #expect(draft.name == "Lip Sleeping Mask")
+    }
+
+    @Test func addProductPhotoControlLivesOutsideTheForm() {
+        #expect(AddProductLayout.photoPlacement == .outsideForm)
     }
 
     @Test(arguments: [(-0.5, 0.0), (0.0, 0.0), (0.4, 80.0), (1.0, 200.0), (1.5, 200.0)])
@@ -285,11 +519,104 @@ struct InventoryModelTests {
         #expect(ExpirationBar.fillWidth(totalWidth: 200, progress: progress) == expectedWidth)
     }
 
+    @Test func expirationBarHeightCanBeCustomized() {
+        let expirationBar = ExpirationBar(progress: 0.5, height: 32)
+
+        #expect(expirationBar.height == 32)
+    }
+
+    @Test(arguments: [(12, "12 days remaining"), (1, "1 day remaining"), (0, "Expires today"), (-3, "Expired 3 days ago")])
+    func productExpirationCountdownUsesReadableWording(days: Int, expected: String) {
+        let referenceDate = date(2026, 9, 17)
+        let expirationDate = calendar.date(byAdding: .day, value: days, to: referenceDate)!
+        let product = Product.fixture(expiration: expirationDate)
+
+        #expect(product.expirationCountdownLabel(on: referenceDate, calendar: calendar) == expected)
+    }
+
+    @Test func welcomeProductImageFrameIsCenteredInsideItsBlock() {
+        let imageFrame = WelcomeProductLayout.imageFrame(
+            blockSize: CGSize(width: 100, height: 100),
+            inset: 8
+        )
+
+        #expect(imageFrame == CGRect(x: 8, y: 8, width: 84, height: 84))
+        #expect(imageFrame.midX == 50)
+        #expect(imageFrame.midY == 50)
+    }
+
+    @Test func snowBackgroundPreservesReplacementAssetAspectRatioAtScreenWidth() {
+        let scaledSize = IcyBackground.scaledSnowSize(
+            assetSize: CGSize(width: 850, height: 2001),
+            containerWidth: 402
+        )
+
+        #expect(scaledSize.width == 402)
+        #expect(abs(scaledSize.height - 946.3553) < 0.001)
+    }
+
+    @Test func detailSnowBackgroundUsesOnePointTwoTimesScreenWidth() {
+        let fittedSize = IcyBackground.detailBackgroundSize(
+            assetSize: CGSize(width: 850, height: 2001),
+            containerSize: CGSize(width: 402, height: 874)
+        )
+
+        #expect(abs(fittedSize.width - 482.4) < 0.001)
+        #expect(abs(fittedSize.height - 1_135.6263) < 0.001)
+    }
+
+    @Test func detailProductImageEndsAtNinetyPercentScale() {
+        #expect(ProductDetailsHero.imageScale(isVisible: true) == 0.9)
+        #expect(abs(ProductDetailsHero.imageScale(isVisible: false) - 0.648) < 0.001)
+    }
+
+    @Test func detailProductShadowUsesTheApprovedOvalProportions() {
+        #expect(ProductDetailsHero.shadowSize == CGSize(width: 210, height: 42))
+    }
+
+    @Test func inventoryPullDownReturnsOnlyAfterThresholdAndRelease() {
+        var gesture = InventoryPullDownGesture()
+
+        let shortPull = gesture.update(offset: -60)
+        let shortRelease = gesture.update(offset: 0)
+        let deepPull = gesture.update(offset: -95)
+        let deepPullContinuation = gesture.update(offset: -40)
+        let deepRelease = gesture.update(offset: 0)
+        let repeatedRest = gesture.update(offset: 0)
+
+        #expect(!shortPull)
+        #expect(!shortRelease)
+        #expect(!deepPull)
+        #expect(!deepPullContinuation)
+        #expect(deepRelease)
+        #expect(!repeatedRest)
+    }
+
+    @Test func inventoryTopEdgePullDownRequiresAnEdgeStartAndEnoughDistance() {
+        #expect(!InventoryTopEdgePullDownGesture.shouldReturn(
+            startY: 120,
+            translationHeight: 130
+        ))
+        #expect(!InventoryTopEdgePullDownGesture.shouldReturn(
+            startY: 40,
+            translationHeight: 70
+        ))
+        #expect(InventoryTopEdgePullDownGesture.shouldReturn(
+            startY: 40,
+            translationHeight: 100
+        ))
+    }
+
     @Test func productCardUsesProvidedBackgroundAndOverlayAssets() {
         #expect(ProductCard.backgroundAssetName == "product-card-background")
         #expect(ProductCard.overlayAssetName == "product-card-overlay")
         #expect(UIImage(named: ProductCard.backgroundAssetName) != nil)
         #expect(UIImage(named: ProductCard.overlayAssetName) != nil)
+    }
+
+    @Test func productCardDetailsArePinnedToTheBottomOverlay() {
+        #expect(ProductCard.detailsFrameAlignment == .bottomLeading)
+        #expect(ProductCard.detailsBottomPadding == 12)
     }
 
     private func makeContainer() throws -> ModelContainer {

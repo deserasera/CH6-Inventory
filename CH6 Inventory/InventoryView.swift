@@ -1,12 +1,38 @@
 import SwiftData
 import SwiftUI
 
+struct InventoryPullDownGesture: Sendable {
+    private static let threshold: CGFloat = 90
+    private var isArmed = false
+
+    mutating func update(offset: CGFloat) -> Bool {
+        if offset <= -Self.threshold {
+            isArmed = true
+            return false
+        }
+        guard isArmed, offset >= 0 else { return false }
+        isArmed = false
+        return true
+    }
+}
+
+enum InventoryTopEdgePullDownGesture {
+    private static let maximumStartY: CGFloat = 80
+    private static let threshold: CGFloat = 90
+
+    static func shouldReturn(startY: CGFloat, translationHeight: CGFloat) -> Bool {
+        startY <= maximumStartY && translationHeight >= threshold
+    }
+}
+
 struct InventoryView: View {
     @Environment(\.modelContext) private var modelContext
     @Query private var products: [Product]
     let referenceDate: Date
+    let onOpenPlayMode: () -> Void
 
     @State private var scrollOffset: CGFloat = 0
+    @State private var pullDownGesture = InventoryPullDownGesture()
     @State private var showAddProduct = false
     @State private var selectedFilter: InventoryFilter = .all
     @State private var searchText = ""
@@ -38,11 +64,11 @@ struct InventoryView: View {
             ScrollView {
                 LazyVStack(spacing: 0) {
                     InventoryExpandedHeader(
-                        count: visibleProducts.count,
-                        selectedFilter: $selectedFilter
+                        selectedFilter: $selectedFilter,
+                        productCount: products.count
                     )
                     .opacity(1 - collapseProgress)
-                    .frame(height: 158 - collapseProgress * 72)
+                    .frame(height: 108 - collapseProgress * 22, alignment: .top)
 
                     LazyVGrid(columns: columns, spacing: 10) {
                         ForEach(visibleProducts) { product in
@@ -69,6 +95,9 @@ struct InventoryView: View {
                 geometry.contentOffset.y + geometry.contentInsets.top
             } action: { _, newValue in
                 scrollOffset = max(newValue, 0)
+                if pullDownGesture.update(offset: newValue) {
+                    onOpenPlayMode()
+                }
             }
 
             InventoryScrolledBackdrop()
@@ -80,8 +109,9 @@ struct InventoryView: View {
                 .opacity(collapseProgress)
                 .allowsHitTesting(false)
         }
+        .simultaneousGesture(topEdgePullDownGesture)
         .safeAreaInset(edge: .bottom) {
-            InventoryBottomBar(searchText: $searchText) {
+            InventoryBottomBar(searchText: $searchText, openPlayground: onOpenPlayMode) {
                 showAddProduct = true
             }
             .padding(.horizontal, 24)
@@ -116,6 +146,17 @@ struct InventoryView: View {
             Text("The product could not be deleted. Please try again.")
         }
         .toolbarVisibility(.hidden, for: .navigationBar)
+    }
+
+    private var topEdgePullDownGesture: some Gesture {
+        DragGesture(minimumDistance: 8)
+            .onEnded { value in
+                guard InventoryTopEdgePullDownGesture.shouldReturn(
+                    startY: value.startLocation.y,
+                    translationHeight: value.translation.height
+                ) else { return }
+                onOpenPlayMode()
+            }
     }
 
     private var deleteConfirmationTitle: Text {
@@ -166,21 +207,23 @@ private struct InventoryScrolledBackdrop: View {
 }
 
 private struct InventoryExpandedHeader: View {
-    let count: Int
     @Binding var selectedFilter: InventoryFilter
+    let productCount: Int
 
     var body: some View {
         VStack(spacing: 16) {
-            HStack(alignment: .firstTextBaseline) {
-                Text("INVENTORY")
-                    .font(.largeTitle)
-                    .fontWeight(.bold)
-                    .foregroundStyle(.white)
+            HStack(alignment: .center) {
+                Image("inventory-title")
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: 189, height: 41)
+                    .accessibilityLabel("Inventory")
                 Spacer()
-                Text("\(count) items")
-                    .font(.subheadline)
-                    .fontWeight(.semibold)
-                    .foregroundStyle(.white)
+                if selectedFilter == .all {
+                    Text("\(productCount) items")
+                        .font(AppTypography.captionRegular)
+                        .foregroundStyle(.white)
+                }
             }
 
             ScrollView(.horizontal) {
@@ -192,8 +235,7 @@ private struct InventoryExpandedHeader: View {
                             }
                         } label: {
                             Text(filter.rawValue)
-                                .font(.body)
-                                .fontWeight(.semibold)
+                                .font(AppTypography.smallBodySemibold)
                                 .foregroundStyle(.white)
                                 .padding(.horizontal, 16)
                                 .padding(.vertical, 8)
@@ -227,11 +269,13 @@ private struct InventoryCompactHeader: View {
     var body: some View {
         VStack(spacing: 0) {
             VStack(spacing: 0) {
-                Text("Inventory")
-                    .font(.headline)
-                    .fontWeight(.bold)
+                Image("inventory-title")
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: 92, height: 20)
+                    .accessibilityLabel("Inventory")
                 Text("\(count) items")
-                    .font(.caption)
+                    .font(AppTypography.captionRegular)
             }
             .foregroundStyle(.white)
             .padding(.top, 8)
@@ -243,11 +287,22 @@ private struct InventoryCompactHeader: View {
 
 private struct InventoryBottomBar: View {
     @Binding var searchText: String
+    let openPlayground: () -> Void
     let addAction: () -> Void
 
     var body: some View {
         GlassEffectContainer(spacing: 8) {
             HStack(spacing: 8) {
+                Button(action: openPlayground) {
+                    Image(systemName: "gamecontroller.fill")
+                        .font(AppTypography.heading)
+                        .frame(width: 44, height: 48)
+                }
+                .buttonStyle(.glass)
+                .buttonBorderShape(.circle)
+                .tint(AppTheme.selectedBlue)
+                .accessibilityLabel("Playground")
+
                 HStack(spacing: 10) {
                     Image(systemName: "magnifyingglass")
                     TextField("Search", text: $searchText)
@@ -261,7 +316,7 @@ private struct InventoryBottomBar: View {
 
                 Button(action: addAction) {
                     Image(systemName: "plus")
-                        .font(.title2)
+                        .font(AppTypography.productTitle)
                         .frame(width: 48, height: 48)
                 }
                 .buttonStyle(.glassProminent)

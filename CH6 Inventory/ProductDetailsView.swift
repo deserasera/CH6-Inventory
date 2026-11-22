@@ -1,11 +1,14 @@
 import SwiftUI
+import UIKit
 
 struct ProductDetailsView: View {
     let product: Product
     let referenceDate: Date
+    @Environment(\.dismiss) private var dismiss
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var reminder: ProductReminder = .none
     @State private var heroIsVisible = false
+    @State private var isEditProductPresented = false
 
     var body: some View {
         ZStack {
@@ -22,15 +25,44 @@ struct ProductDetailsView: View {
             }
             .scrollIndicators(.hidden)
         }
-        .navigationTitle("Product Details")
+        .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
+        .navigationBarBackButtonHidden(true)
         .toolbarVisibility(.visible, for: .navigationBar)
         .toolbarBackground(.hidden, for: .navigationBar)
         .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                Button("Edit") { }
-                    .buttonStyle(.glass)
+            ToolbarItem(placement: .topBarLeading) {
+                Button {
+                    dismiss()
+                } label: {
+                    Image(systemName: "chevron.left")
+                        .font(AppTypography.heading)
+                        .frame(width: 32, height: 32)
+                }
+                .buttonStyle(.glass)
+                .buttonBorderShape(.circle)
+                .accessibilityLabel("Back to inventory")
             }
+            ToolbarItem(placement: .principal) {
+                Text("Product Details")
+                    .font(AppTypography.heading)
+                    .foregroundStyle(AppTheme.deepBlue)
+            }
+            ToolbarItem(placement: .topBarTrailing) {
+                Button {
+                    isEditProductPresented = true
+                } label: {
+                    Text("Edit")
+                        .font(AppTypography.heading)
+                        .frame(minWidth: 52, minHeight: 32)
+                }
+                .buttonStyle(.glass)
+                .buttonBorderShape(.capsule)
+            }
+        }
+        .tint(AppTheme.selectedBlue)
+        .sheet(isPresented: $isEditProductPresented) {
+            AddProductView(product: product)
         }
         .onAppear {
             if reduceMotion {
@@ -47,6 +79,12 @@ struct ProductDetailsView: View {
 private struct ProductDetailsBackground: View {
     var body: some View {
         GeometryReader { proxy in
+            let assetSize = UIImage(named: "snow-background")?.size ?? .zero
+            let fittedSize = IcyBackground.detailBackgroundSize(
+                assetSize: assetSize,
+                containerSize: proxy.size
+            )
+
             ZStack(alignment: .top) {
                 LinearGradient(
                     colors: [AppTheme.sky, AppTheme.ice],
@@ -57,52 +95,76 @@ private struct ProductDetailsBackground: View {
                 // EDIT HERE — replace this asset to change the transparent snow/ice landscape.
                 Image("snow-background")
                     .resizable()
-                    .scaledToFill()
+                    .frame(width: fittedSize.width, height: fittedSize.height)
                     .frame(
-                        width: proxy.size.width,
-                        height: proxy.size.height,
-                        // Keep bottom alignment so the generated landscape is never cut off below.
+                        maxWidth: .infinity,
+                        maxHeight: .infinity,
                         alignment: .bottom
                     )
-                    .clipped()
+                    .offset(y: 258)
+                    .opacity(0.75)
                     .accessibilityHidden(true)
             }
             .frame(width: proxy.size.width, height: proxy.size.height)
+            .clipped()
         }
         .ignoresSafeArea()
     }
 }
 
-private struct ProductDetailsHero: View {
+struct ProductDetailsHero: View {
+    static let shadowSize = CGSize(width: 210, height: 42)
+
     let product: Product
     let isVisible: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(product.brand)
-                .font(.title3)
+                .font(AppTypography.heading)
             Text(product.name)
-                .font(.title)
-                .fontWeight(.semibold)
+                .font(AppTypography.productTitle)
             Text(product.isInUse ? "In use" : "Not in use")
-                .font(.subheadline)
-                .fontWeight(.bold)
+                .font(AppTypography.smallBodySemibold)
                 .padding(.horizontal, 16)
                 .padding(.vertical, 8)
-                .background(.white.opacity(0.15), in: Capsule())
+                .background(AppTheme.sky, in: Capsule())
                 .padding(.top, 4)
 
-            // Product image region supports bundled assets and imported photos.
-            ProductImageView(product: product, contentMode: .fit)
+            ZStack(alignment: .bottom) {
+                Ellipse()
+                    .fill(
+                        RadialGradient(
+                            colors: [
+                                AppTheme.selectedBlue.opacity(0.20),
+                                AppTheme.selectedBlue.opacity(0)
+                            ],
+                            center: .center,
+                            startRadius: 0,
+                            endRadius: Self.shadowSize.width / 2
+                        )
+                    )
+                    .frame(width: Self.shadowSize.width, height: Self.shadowSize.height)
+                    .blur(radius: 14)
+                    .offset(y: -8)
+                    .accessibilityHidden(true)
+
+                // Product image region supports bundled assets and imported photos.
+                ProductImageView(product: product, contentMode: .fit)
+                    .scaleEffect(Self.imageScale(isVisible: isVisible))
+                    .offset(y: isVisible ? 0 : 70)
+                    .shadow(color: AppTheme.deepBlue.opacity(0.28), radius: 12, y: 10)
+            }
                 .frame(maxWidth: .infinity)
                 .frame(height: 238)
-                .scaleEffect(isVisible ? 1 : 0.72)
-                .offset(y: isVisible ? 0 : 70)
-                .shadow(color: AppTheme.deepBlue.opacity(0.28), radius: 12, y: 10)
                 .accessibilityLabel("\(product.brand) \(product.name)")
         }
         .foregroundStyle(AppTheme.deepBlue)
         .padding(.top, 12)
+    }
+
+    static func imageScale(isVisible: Bool) -> CGFloat {
+        (isVisible ? 1 : 0.72) * 0.9
     }
 }
 
@@ -113,16 +175,12 @@ private struct ProductExpirationSection: View {
     var body: some View {
         VStack(spacing: 4) {
             HStack {
-                Text("Good to use")
+                Text(product.daysRemaining(on: referenceDate) >= 0 ? "Good to use" : "Expired")
                 Spacer()
-                Text(product.effectiveExpirationDate(), format: .dateTime.day().month().year())
+                Text(product.expirationCountdownLabel(on: referenceDate))
             }
-            .font(.headline)
-            .fontWeight(.semibold)
-            ExpirationBar(
-                progress: product.shelfLifeProgress(on: referenceDate),
-                daysRemaining: product.daysRemaining(on: referenceDate)
-            )
+            .font(AppTypography.heading)
+            ExpirationBar(progress: product.shelfLifeProgress(on: referenceDate))
         }
         .foregroundStyle(AppTheme.deepBlue)
     }
@@ -142,9 +200,9 @@ private struct ProductFactsSection: View {
             }
             ProductFactCard(title: "PAO") {
                 Text("\(product.periodAfterOpeningMonths)")
-                    .font(.title2)
+                    .font(AppTypography.heading)
                 Text("months")
-                    .font(.subheadline)
+                    .font(AppTypography.heading)
             }
             ProductFactCard(title: "Expiration date") {
                 Text(product.printedExpirationDate, format: .dateTime.day().month().year())
@@ -164,26 +222,21 @@ private struct ProductFactCard<Content: View>: View {
     }
 
     var body: some View {
-        VStack(spacing: 12) {
+        VStack(spacing: 0) {
             Text(title)
-                .font(.caption)
+                .font(AppTypography.smallBodyRegular)
                 .multilineTextAlignment(.center)
-            Spacer(minLength: 0)
+            Spacer()
             VStack(spacing: 0) {
                 content
             }
-            .font(.headline)
-            .fontWeight(.semibold)
+            .font(AppTypography.heading)
             .multilineTextAlignment(.center)
         }
         .padding(.horizontal, 16)
-        .padding(.vertical, 40)
-        .frame(maxWidth: .infinity, minHeight: 160)
-        .background(.white.opacity(0.27), in: RoundedRectangle(cornerRadius: 16))
-        .overlay {
-            RoundedRectangle(cornerRadius: 16)
-                .stroke(.white.opacity(0.65), lineWidth: 0.8)
-        }
+        .padding(.vertical, 24)
+        .frame(maxWidth: .infinity, minHeight: 136)
+        .glassEffect(.clear, in: RoundedRectangle(cornerRadius: 16))
     }
 }
 
@@ -192,8 +245,8 @@ private struct ProductReminderRow: View {
 
     var body: some View {
         HStack {
-            Label("Set Reminder", systemImage: "bell")
-                .font(.caption)
+            Text("Set Reminder")
+                .font(AppTypography.heading)
             Spacer()
             Picker("Set Reminder", selection: $selection) {
                 ForEach(ProductReminder.allCases) { reminder in
@@ -201,17 +254,13 @@ private struct ProductReminderRow: View {
                 }
             }
             .labelsHidden()
-            .font(.headline)
+            .font(AppTypography.heading)
             .tint(AppTheme.deepBlue)
         }
         .foregroundStyle(AppTheme.deepBlue)
         .padding(.horizontal, 16)
         .frame(height: 52)
-        .background(.white.opacity(0.30), in: RoundedRectangle(cornerRadius: 16))
-        .overlay {
-            RoundedRectangle(cornerRadius: 16)
-                .stroke(.white.opacity(0.65), lineWidth: 0.8)
-        }
+        .glassEffect(.clear, in: RoundedRectangle(cornerRadius: 16))
     }
 }
 

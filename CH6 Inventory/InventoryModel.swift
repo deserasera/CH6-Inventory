@@ -62,6 +62,22 @@ final class Product: Identifiable, Hashable {
         return calendar.dateComponents([.day], from: start, to: end).day ?? 0
     }
 
+    func expirationCountdownLabel(on date: Date, calendar: Calendar = .current) -> String {
+        let days = daysRemaining(on: date, calendar: calendar)
+        switch days {
+        case 2...:
+            return "\(days) days remaining"
+        case 1:
+            return "1 day remaining"
+        case 0:
+            return "Expires today"
+        case -1:
+            return "Expired 1 day ago"
+        default:
+            return "Expired \(-days) days ago"
+        }
+    }
+
     func isExpiringSoon(on date: Date, calendar: Calendar = .current) -> Bool {
         let days = daysRemaining(on: date, calendar: calendar)
         return (0...180).contains(days)
